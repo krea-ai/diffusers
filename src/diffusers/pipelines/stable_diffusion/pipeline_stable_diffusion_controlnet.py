@@ -683,7 +683,15 @@ class StableDiffusionControlNetPipeline(DiffusionPipeline, TextualInversionLoade
 
         return image
 
-    # Copied from diffusers.pipelines.stable_diffusion.pipeline_stable_diffusion.StableDiffusionPipeline.prepare_latents
+    def get_timesteps(self, num_inference_steps, strength, device):
+        # get the original timestep using init_timestep
+        init_timestep = min(int(num_inference_steps * strength), num_inference_steps)
+
+        t_start = max(num_inference_steps - init_timestep, 0)
+        timesteps = self.scheduler.timesteps[t_start * self.scheduler.order :]
+
+        return timesteps, num_inference_steps - t_start
+
     def prepare_latents(self, batch_size, num_channels_latents, height, width, dtype, device, generator, latents=None):
         shape = (batch_size, num_channels_latents, height // self.vae_scale_factor, width // self.vae_scale_factor)
         if isinstance(generator, list) and len(generator) != batch_size:
@@ -699,6 +707,61 @@ class StableDiffusionControlNetPipeline(DiffusionPipeline, TextualInversionLoade
 
         # scale the initial noise by the standard deviation required by the scheduler
         latents = latents * self.scheduler.init_noise_sigma
+        return latents
+
+    # Copied from diffusers.pipelines.stable_diffusion.pipeline_stable_diffusion.StableDiffusionPipeline.prepare_latents
+    def prepare_latents_img2img(self, image, timestep, batch_size, num_channels_latents, height, width, dtype, device, generator, latents=None):
+        if image is not None:
+            image = image.to(device=device, dtype=dtype)
+
+        shape = (batch_size, num_channels_latents, height // self.vae_scale_factor, width // self.vae_scale_factor)
+        if isinstance(generator, list) and len(generator) != batch_size:
+            raise ValueError(
+                f"You have passed a list of generators of length {len(generator)}, but requested an effective batch"
+                f" size of {batch_size}. Make sure the batch size matches the length of the generators."
+            )
+        if latents is None:
+            if isinstance(generator, list):
+                init_latents = [
+                    self.vae.encode(image[i : i + 1]).latent_dist.sample(generator[i]) for i in range(batch_size)
+                ]
+                init_latents = torch.cat(init_latents, dim=0)
+            else:
+                init_latents = self.vae.encode(image).latent_dist.sample(generator)
+            
+            init_latents = self.vae.config.scaling_factor * init_latents
+            if batch_size > init_latents.shape[0] and batch_size % init_latents.shape[0] == 0:
+                # expand init_latents for batch_size
+                deprecation_message = (
+                    f"You have passed {batch_size} text prompts (`prompt`), but only {init_latents.shape[0]} initial"
+                    " images (`image`). Initial images are now duplicating to match the number of text prompts. Note"
+                    " that this behavior is deprecated and will be removed in a version 1.0.0. Please make sure to update"
+                    " your script to pass as many initial images as text prompts to suppress this warning."
+                )
+                # deprecate("len(prompt) != len(image)", "1.0.0", deprecation_message, standard_warn=False)
+                additional_image_per_prompt = batch_size // init_latents.shape[0]
+                init_latents = torch.cat([init_latents] * additional_image_per_prompt, dim=0)
+            elif batch_size > init_latents.shape[0] and batch_size % init_latents.shape[0] != 0:
+                raise ValueError(
+                    f"Cannot duplicate `image` of batch size {init_latents.shape[0]} to {batch_size} text prompts."
+                )
+            else:
+                init_latents = torch.cat([init_latents], dim=0)
+
+            shape = init_latents.shape
+            noise = randn_tensor(shape, generator=generator, device=device, dtype=dtype)
+
+            # get latents
+            init_latents = self.scheduler.add_noise(init_latents, noise, timestep)
+            latents = init_latents
+        else:
+            latents = latents.to(device)
+            latents = latents * self.scheduler.init_noise_sigma
+
+
+        # scale the initial noise by the standard deviation required by the scheduler
+        # NOTE: not sure if the following line is necessary in for img2img
+        # latents = latents * self.scheduler.init_noise_sigma
         return latents
 
     def _default_height_width(self, height, width, image):
@@ -762,6 +825,9 @@ class StableDiffusionControlNetPipeline(DiffusionPipeline, TextualInversionLoade
         cross_attention_kwargs: Optional[Dict[str, Any]] = None,
         controlnet_conditioning_scale: Union[float, List[float]] = 1.0,
         guess_mode: bool = False,
+        img2img_image: Optional[Union[torch.FloatTensor, PIL.Image.Image]] = None,
+        img2img_strength: float = 1.0,
+        controlnet_strength: float = 1.0,
     ):
         r"""
         Function invoked when calling the pipeline for generation.
@@ -891,6 +957,7 @@ class StableDiffusionControlNetPipeline(DiffusionPipeline, TextualInversionLoade
             negative_prompt_embeds=negative_prompt_embeds,
         )
 
+
         # 4. Prepare image
         if isinstance(self.controlnet, ControlNetModel):
             image = self.prepare_image(
@@ -928,20 +995,52 @@ class StableDiffusionControlNetPipeline(DiffusionPipeline, TextualInversionLoade
 
         # 5. Prepare timesteps
         self.scheduler.set_timesteps(num_inference_steps, device=device)
-        timesteps = self.scheduler.timesteps
-
+            
         # 6. Prepare latent variables
         num_channels_latents = self.unet.config.in_channels
-        latents = self.prepare_latents(
-            batch_size * num_images_per_prompt,
-            num_channels_latents,
-            height,
-            width,
-            prompt_embeds.dtype,
-            device,
-            generator,
-            latents,
-        )
+
+        if img2img_strength > 0.0:
+            img2img_image = self.prepare_image(
+                image=img2img_image,
+                width=width,
+                height=height,
+                batch_size=batch_size * num_images_per_prompt,
+                num_images_per_prompt=num_images_per_prompt,
+                device=device,
+                dtype=self.controlnet.dtype,
+                do_classifier_free_guidance=do_classifier_free_guidance,
+                guess_mode=guess_mode,
+            )
+            img2img_image =  2.0 * img2img_image - 1.0
+
+            timesteps, num_inference_steps = self.get_timesteps(num_inference_steps, 1 - img2img_strength, device)
+            latent_timestep = timesteps[:1].repeat(batch_size * num_images_per_prompt)
+
+            latents = self.prepare_latents_img2img(
+                img2img_image[0][None, :],
+                latent_timestep,
+                batch_size * num_images_per_prompt,
+                num_channels_latents,
+                height,
+                width,
+                prompt_embeds.dtype,
+                device,
+                generator,
+                latents,
+            )
+        else:
+            timesteps = self.scheduler.timesteps
+
+            latents = self.prepare_latents(
+                batch_size * num_images_per_prompt,
+                num_channels_latents,
+                height,
+                width,
+                prompt_embeds.dtype,
+                device,
+                generator,
+                latents,
+            )
 
         # 7. Prepare extra step kwargs. TODO: Logic should ideally just be moved out of the pipeline
         extra_step_kwargs = self.prepare_extra_step_kwargs(generator, eta)
@@ -981,14 +1080,22 @@ class StableDiffusionControlNetPipeline(DiffusionPipeline, TextualInversionLoade
                     mid_block_res_sample = torch.cat([torch.zeros_like(mid_block_res_sample), mid_block_res_sample])
 
                 # predict the noise residual
-                noise_pred = self.unet(
-                    latent_model_input,
-                    t,
-                    encoder_hidden_states=prompt_embeds,
-                    cross_attention_kwargs=cross_attention_kwargs,
-                    down_block_additional_residuals=down_block_res_samples,
-                    mid_block_additional_residual=mid_block_res_sample,
-                ).sample
+                if t <= controlnet_strength * 1000:
+                    noise_pred = self.unet(
+                        latent_model_input,
+                        t,
+                        encoder_hidden_states=prompt_embeds,
+                        cross_attention_kwargs=cross_attention_kwargs,
+                        down_block_additional_residuals=down_block_res_samples,
+                        mid_block_additional_residual=mid_block_res_sample,
+                    ).sample
+                else:
+                    noise_pred = self.unet(
+                        latent_model_input,
+                        t,
+                        encoder_hidden_states=prompt_embeds,
+                        cross_attention_kwargs=cross_attention_kwargs,
+                    ).sample
 
                 # perform guidance
                 if do_classifier_free_guidance:
