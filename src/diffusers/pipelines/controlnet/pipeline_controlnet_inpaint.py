@@ -20,9 +20,10 @@ import warnings
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import numpy as np
-import PIL.Image
 import torch
 import torch.nn.functional as F
+
+import PIL.Image
 from transformers import CLIPImageProcessor, CLIPTextModel, CLIPTokenizer
 
 from ...image_processor import VaeImageProcessor
@@ -901,6 +902,33 @@ class StableDiffusionControlNetInpaintPipeline(DiffusionPipeline, TextualInversi
         return height, width
 
     # Copied from diffusers.pipelines.stable_diffusion.pipeline_stable_diffusion_inpaint.StableDiffusionInpaintPipeline.prepare_mask_latents
+    def resize_mask(
+        self, mask, dtype=torch.float16,
+    ):
+        height = mask.height
+        width = mask.width
+        if isinstance(mask, (PIL.Image.Image, np.ndarray)):
+            mask = [mask]
+        if isinstance(mask, list) and isinstance(mask[0], PIL.Image.Image):
+            # mask = [i.resize((width, height), resample=PIL.Image.LANCZOS) for i in mask]
+            mask = np.concatenate([np.array(m.convert("L"))[None, None, :] for m in mask], axis=0)
+            mask = mask.astype(np.float32) / 255.0
+        elif isinstance(mask, list) and isinstance(mask[0], np.ndarray):
+            mask = np.concatenate([m[None, None, :] for m in mask], axis=0)
+
+        # mask[mask < 0.5] = 0
+        # mask[mask >= 0.5] = 1
+        mask = torch.from_numpy(mask)
+
+        mask = torch.nn.functional.interpolate(
+        mask, size=(height // self.vae_scale_factor, width // self.vae_scale_factor)
+        )
+        mask = mask.to(device="cuda", dtype=dtype)
+        return mask
+
+
+        
+
     def prepare_mask_latents(
         self, mask, masked_image, batch_size, height, width, dtype, device, generator, do_classifier_free_guidance
     ):
@@ -1304,6 +1332,9 @@ class StableDiffusionControlNetInpaintPipeline(DiffusionPipeline, TextualInversi
                 if num_channels_unet == 4:
                     init_latents_proper = image_latents[:1]
                     init_mask = mask[:1]
+                    from PIL import Image
+
+                    # soft_mask = self.resize_mask(soft_mask_pil,)
 
                     if i < len(timesteps) - 1:
                         noise_timestep = timesteps[i + 1]
@@ -1311,7 +1342,12 @@ class StableDiffusionControlNetInpaintPipeline(DiffusionPipeline, TextualInversi
                             init_latents_proper, noise, torch.tensor([noise_timestep])
                         )
 
-                    latents = (1 - init_mask) * init_latents_proper + init_mask * latents
+                    soft_mask = None
+                    if soft_mask is None:
+                        latents = (1 - init_mask) * init_latents_proper + init_mask * latents
+                    else: 
+                        print("Using soft mask in controlnet inpaint")
+                        latents = (1 - soft_mask) * init_latents_proper + soft_mask * latents
 
                 # call the callback, if provided
                 if i == len(timesteps) - 1 or ((i + 1) > num_warmup_steps and (i + 1) % self.scheduler.order == 0):

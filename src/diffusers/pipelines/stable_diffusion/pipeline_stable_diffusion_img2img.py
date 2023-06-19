@@ -17,8 +17,9 @@ import warnings
 from typing import Any, Callable, Dict, List, Optional, Union
 
 import numpy as np
-import PIL
 import torch
+
+import PIL
 from packaging import version
 from transformers import CLIPImageProcessor, CLIPTextModel, CLIPTokenizer
 
@@ -602,10 +603,35 @@ class StableDiffusionImg2ImgPipeline(DiffusionPipeline, TextualInversionLoaderMi
         noise = randn_tensor(shape, generator=generator, device=device, dtype=dtype)
 
         # get latents
+        unnoised_latents = init_latents.clone()
         init_latents = self.scheduler.add_noise(init_latents, noise, timestep)
         latents = init_latents
 
-        return latents
+        # return latents
+        return latents, noise, unnoised_latents
+    
+    def resize_mask(
+        self, mask, dtype=torch.float16,
+    ):
+        height = mask.height
+        width = mask.width
+        if isinstance(mask, (PIL.Image.Image, np.ndarray)):
+            mask = [mask]
+        if isinstance(mask, list) and isinstance(mask[0], PIL.Image.Image):
+            # mask = [i.resize((width, height), resample=PIL.Image.LANCZOS) for i in mask]
+            mask = np.concatenate([np.array(m.convert("L"))[None, None, :] for m in mask], axis=0)
+            mask = mask.astype(np.float32) / 255.0
+        elif isinstance(mask, list) and isinstance(mask[0], np.ndarray):
+            mask = np.concatenate([m[None, None, :] for m in mask], axis=0)
+
+        mask = torch.from_numpy(mask)
+
+        mask = torch.nn.functional.interpolate(
+        mask, size=(height // self.vae_scale_factor, width // self.vae_scale_factor)
+        )
+        mask = mask.to(device="cuda", dtype=dtype)
+        return mask
+
 
     @torch.no_grad()
     @replace_example_docstring(EXAMPLE_DOC_STRING)
@@ -634,6 +660,7 @@ class StableDiffusionImg2ImgPipeline(DiffusionPipeline, TextualInversionLoaderMi
         callback: Optional[Callable[[int, int, torch.FloatTensor], None]] = None,
         callback_steps: int = 1,
         cross_attention_kwargs: Optional[Dict[str, Any]] = None,
+        mask=None,
     ):
         r"""
         Function invoked when calling the pipeline for generation.
@@ -745,7 +772,7 @@ class StableDiffusionImg2ImgPipeline(DiffusionPipeline, TextualInversionLoaderMi
         latent_timestep = timesteps[:1].repeat(batch_size * num_images_per_prompt)
 
         # 6. Prepare latent variables
-        latents = self.prepare_latents(
+        latents, noise, init_latents = self.prepare_latents(
             image, latent_timestep, batch_size, num_images_per_prompt, prompt_embeds.dtype, device, generator
         )
 
@@ -776,6 +803,28 @@ class StableDiffusionImg2ImgPipeline(DiffusionPipeline, TextualInversionLoaderMi
 
                 # compute the previous noisy sample x_t -> x_t-1
                 latents = self.scheduler.step(noise_pred, t, latents, **extra_step_kwargs, return_dict=False)[0]
+
+                init_latents_proper = init_latents[:1]
+                from PIL import Image
+                soft_mask = None
+
+                print("old******************************")
+                soft_mask_pil = Image.open("/home/erwann/diffusers/examples/community/soft_mask_5.png")
+                # soft_mask = None
+                soft_mask = self.resize_mask(soft_mask_pil,)
+
+                if i < len(timesteps) - 1:
+                    noise_timestep = timesteps[i + 1]
+                    init_latents_proper = self.scheduler.add_noise(
+                        init_latents_proper, noise, torch.tensor([noise_timestep])
+                    )
+
+                if soft_mask is None:
+                    print("no soft mask")
+                    # latents = (1 - init_mask) * init_latents_proper + init_mask * latents
+                else: 
+                    print("using soft mask")
+                    latents = (1 - soft_mask) * init_latents_proper + soft_mask * latents
 
                 # call the callback, if provided
                 if i == len(timesteps) - 1 or ((i + 1) > num_warmup_steps and (i + 1) % self.scheduler.order == 0):
