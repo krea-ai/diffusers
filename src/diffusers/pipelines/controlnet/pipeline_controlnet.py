@@ -22,6 +22,7 @@ import torch
 from torch import nn
 
 import PIL.Image
+from diffusers.pipelines.stable_diffusion.safety_checker import StableDiffusionSafetyChecker
 from transformers import CLIPImageProcessor, CLIPTextModel, CLIPTokenizer
 
 from ...loaders import TextualInversionLoaderMixin

@@ -22,6 +22,8 @@ import torch
 from torch import nn
 
 import PIL.Image
+
+# from diffusers.pipelines.stable_diffusion.safety_checker import StableDiffusionSafetyChecker
 from transformers import CLIPImageProcessor, CLIPTextModel, CLIPTokenizer
 
 from ...loaders import TextualInversionLoaderMixin
@@ -38,8 +40,8 @@ from ...utils import (
     replace_example_docstring,
 )
 from ..pipeline_utils import DiffusionPipeline
-# from . import StableDiffusionPipelineOutput
-# from .safety_checker import StableDiffusionSafetyChecker
+from . import StableDiffusionPipelineOutput
+from .safety_checker import StableDiffusionSafetyChecker
 
 
 logger = logging.get_logger(__name__)  # pylint: disable=invalid-name
