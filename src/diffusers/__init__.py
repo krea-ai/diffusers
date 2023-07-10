@@ -5,6 +5,7 @@ from .utils import (
     OptionalDependencyNotAvailable,
     is_flax_available,
     is_inflect_available,
+    is_invisible_watermark_available,
     is_k_diffusion_available,
     is_k_diffusion_version,
     is_librosa_available,
@@ -58,6 +59,7 @@ else:
     )
     from .pipelines import (
         AudioPipelineOutput,
+        ConsistencyModelPipeline,
         DanceDiffusionPipeline,
         DDIMPipeline,
         DDPMPipeline,
@@ -72,8 +74,11 @@ else:
         ScoreSdeVePipeline,
     )
     from .schedulers import (
+        CMStochasticIterativeScheduler,
         DDIMInverseScheduler,
+        DDIMParallelScheduler,
         DDIMScheduler,
+        DDPMParallelScheduler,
         DDPMScheduler,
         DEISMultistepScheduler,
         DPMSolverMultistepInverseScheduler,
@@ -134,9 +139,18 @@ else:
         KandinskyInpaintPipeline,
         KandinskyPipeline,
         KandinskyPriorPipeline,
+        KandinskyV22ControlnetImg2ImgPipeline,
+        KandinskyV22ControlnetPipeline,
+        KandinskyV22Img2ImgPipeline,
+        KandinskyV22InpaintPipeline,
+        KandinskyV22Pipeline,
+        KandinskyV22PriorEmb2EmbPipeline,
+        KandinskyV22PriorPipeline,
         LDMTextToImagePipeline,
         PaintByExamplePipeline,
         SemanticStableDiffusionPipeline,
+        ShapEImg2ImgPipeline,
+        ShapEPipeline,
         StableDiffusionAttendAndExcitePipeline,
         StableDiffusionControlNetImg2ImgPipeline,
         StableDiffusionControlNetInpaintPipeline,
@@ -152,6 +166,7 @@ else:
         StableDiffusionLDM3DPipeline,
         StableDiffusionModelEditingPipeline,
         StableDiffusionPanoramaPipeline,
+        StableDiffusionParadigmsPipeline,
         StableDiffusionPipeline,
         StableDiffusionPipelineSafe,
         StableDiffusionPix2PixZeroPipeline,
@@ -170,8 +185,17 @@ else:
         VersatileDiffusionImageVariationPipeline,
         VersatileDiffusionPipeline,
         VersatileDiffusionTextToImagePipeline,
+        VideoToVideoSDPipeline,
         VQDiffusionPipeline,
     )
+
+try:
+    if not (is_torch_available() and is_transformers_available() and is_invisible_watermark_available()):
+        raise OptionalDependencyNotAvailable()
+except OptionalDependencyNotAvailable:
+    from .utils.dummy_torch_and_transformers_and_invisible_watermark_objects import *  # noqa F403
+else:
+    from .pipelines import StableDiffusionXLImg2ImgPipeline, StableDiffusionXLPipeline
 
 try:
     if not (is_torch_available() and is_transformers_available() and is_k_diffusion_available()):
