@@ -5,9 +5,10 @@ import urllib.parse as ul
 from typing import Any, Callable, Dict, List, Optional, Union
 
 import numpy as np
-import PIL
 import torch
 import torch.nn.functional as F
+
+import PIL
 from transformers import CLIPImageProcessor, T5EncoderModel, T5Tokenizer
 
 from ...loaders import LoraLoaderMixin
