@@ -17,6 +17,7 @@ import os
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import torch
+
 from transformers import CLIPTextModel, CLIPTextModelWithProjection, CLIPTokenizer
 
 from ...image_processor import VaeImageProcessor
@@ -29,6 +30,9 @@ from ...models.attention_processor import (
     XFormersAttnProcessor,
 )
 from ...schedulers import KarrasDiffusionSchedulers
+<<<<<<< HEAD
+from ...utils import is_accelerate_available, is_accelerate_version, logging, randn_tensor, replace_example_docstring
+=======
 from ...utils import (
     is_accelerate_available,
     is_accelerate_version,
@@ -37,6 +41,7 @@ from ...utils import (
     randn_tensor,
     replace_example_docstring,
 )
+>>>>>>> ba43ce3476ffa649a6a14f0e13af07df27f1c66f
 from ..pipeline_utils import DiffusionPipeline
 from . import StableDiffusionXLPipelineOutput
 

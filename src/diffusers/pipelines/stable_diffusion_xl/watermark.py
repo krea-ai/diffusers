@@ -1,11 +1,15 @@
 import numpy as np
 import torch
 
+<<<<<<< HEAD
+from imwatermark import WatermarkEncoder
+=======
 from ...utils import is_invisible_watermark_available
 
 
 if is_invisible_watermark_available():
     from imwatermark import WatermarkEncoder
+>>>>>>> ba43ce3476ffa649a6a14f0e13af07df27f1c66f
 
 
 # Copied from https://github.com/Stability-AI/generative-models/blob/613af104c6b85184091d42d374fef420eddb356d/scripts/demo/streamlit_helpers.py#L66
@@ -22,15 +26,17 @@ class StableDiffusionXLWatermarker:
         self.encoder.set_watermark("bits", self.watermark)
 
     def apply_watermark(self, images: torch.FloatTensor):
-        # can't encode images that are smaller than 256
-        if images.shape[-1] < 256:
-            return images
-
-        images = (255 * (images / 2 + 0.5)).cpu().permute(0, 2, 3, 1).float().numpy()
-
-        images = [self.encoder.encode(image, "dwtDct") for image in images]
-
-        images = torch.from_numpy(np.array(images)).permute(0, 3, 1, 2)
-
-        images = torch.clamp(2 * (images / 255 - 0.5), min=-1.0, max=1.0)
+        print("skipping watermark")
         return images
+        # can't encode images that are smaller than 256
+        # if images.shape[-1] < 256:
+        #     return images
+
+        # images = (255 * (images / 2 + 0.5)).cpu().permute(0, 2, 3, 1).float().numpy()
+
+        # images = [self.encoder.encode(image, "dwtDct") for image in images]
+
+        # images = torch.from_numpy(np.array(images)).permute(0, 3, 1, 2)
+
+        # images = torch.clamp(2 * (images / 255 - 0.5), min=-1.0, max=1.0)
+        # return images

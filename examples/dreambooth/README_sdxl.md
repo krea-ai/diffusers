@@ -80,6 +80,7 @@ export MODEL_NAME="stabilityai/stable-diffusion-xl-base-1.0"
 export INSTANCE_DIR="dog"
 export OUTPUT_DIR="lora-trained-xl"
 
+# python train_dreambooth_lora_sdxl.py \
 accelerate launch train_dreambooth_lora_sdxl.py \
   --pretrained_model_name_or_path=$MODEL_NAME  \
   --instance_data_dir=$INSTANCE_DIR \

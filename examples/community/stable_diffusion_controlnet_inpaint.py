@@ -4,11 +4,10 @@ import inspect
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import numpy as np
-import PIL.Image
 import torch
 import torch.nn.functional as F
-from transformers import CLIPImageProcessor, CLIPTextModel, CLIPTokenizer
 
+import PIL.Image
 from diffusers import AutoencoderKL, ControlNetModel, DiffusionPipeline, UNet2DConditionModel, logging
 from diffusers.pipelines.stable_diffusion import StableDiffusionPipelineOutput, StableDiffusionSafetyChecker
 from diffusers.pipelines.stable_diffusion.pipeline_stable_diffusion_controlnet import MultiControlNetModel
@@ -20,6 +19,7 @@ from diffusers.utils import (
     randn_tensor,
     replace_example_docstring,
 )
+from transformers import CLIPImageProcessor, CLIPTextModel, CLIPTokenizer
 
 
 logger = logging.get_logger(__name__)  # pylint: disable=invalid-name
@@ -842,6 +842,7 @@ class StableDiffusionControlNetInpaintPipeline(DiffusionPipeline):
         callback_steps: int = 1,
         cross_attention_kwargs: Optional[Dict[str, Any]] = None,
         controlnet_conditioning_scale: Union[float, List[float]] = 1.0,
+        latent_mask = None,
     ):
         r"""
         Function invoked when calling the pipeline for generation.
@@ -1094,7 +1095,18 @@ class StableDiffusionControlNetInpaintPipeline(DiffusionPipeline):
                     noise_pred = noise_pred_uncond + guidance_scale * (noise_pred_text - noise_pred_uncond)
 
                 # compute the previous noisy sample x_t -> x_t-1
-                latents = self.scheduler.step(noise_pred, t, latents, **extra_step_kwargs).prev_sample
+                from PIL import Image
+                latent_mask = Image.open("/home/erwann/diffusers/examples/community/soft_mask2.png")
+                if latent_mask is None:
+                    latents = self.scheduler.step(noise_pred, t, latents, **extra_step_kwargs).prev_sample
+                else:
+                    print("masking latent update")
+                    unmasked_latents = self.scheduler.step(noise_pred, t, latents, **extra_step_kwargs).prev_sample
+                    latent_mask_np = np.array(latent_mask.resize((unmasked_latents.shape)))
+                    latents = unmasked_latents * latent_mask_np + latents * (1 - latent_mask_np)
+                
+                
+                # image = (image * mask_image + init_image * (1 - mask_image)).astype(np.uint8)
 
                 # call the callback, if provided
                 if i == len(timesteps) - 1 or ((i + 1) > num_warmup_steps and (i + 1) % self.scheduler.order == 0):
@@ -1135,4 +1147,5 @@ class StableDiffusionControlNetInpaintPipeline(DiffusionPipeline):
         if not return_dict:
             return (image, has_nsfw_concept)
 
+        return StableDiffusionPipelineOutput(images=image, nsfw_content_detected=has_nsfw_concept)
         return StableDiffusionPipelineOutput(images=image, nsfw_content_detected=has_nsfw_concept)
