@@ -26,14 +26,14 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Union
 
 import numpy as np
-import PIL
 import torch
+
+import diffusers
+import PIL
 from huggingface_hub import ModelCard, hf_hub_download, model_info, snapshot_download
 from packaging import version
 from requests.exceptions import HTTPError
 from tqdm.auto import tqdm
-
-import diffusers
 
 from .. import __version__
 from ..configuration_utils import ConfigMixin
@@ -1043,19 +1043,19 @@ class DiffusionPipeline(ConfigMixin):
 
         # import it here to avoid circular import
         from diffusers import pipelines
-
-        # 6. Load each module in the pipeline
-        for name, (library_name, class_name) in tqdm(init_dict.items(), desc="Loading pipeline components..."):
-            # 6.1 - now that JAX/Flax is an official framework of the library, we might load from Flax names
+        def load_sub_module(name, library_name, class_name, init_dict, passed_class_obj, 
+               pipelines, pipeline_class, torch_dtype, provider, sess_options, device_map, 
+               max_memory, offload_folder, offload_state_dict, model_variants, from_flax, 
+               variant, low_cpu_mem_usage, cached_folder, pretrained_model_name_or_path):
+    # now that JAX/Flax is an official framework of the library, we might load from Flax names
             if class_name.startswith("Flax"):
                 class_name = class_name[4:]
-
-            # 6.2 Define all importable classes
+                
+            # Define all importable classes
             is_pipeline_module = hasattr(pipelines, library_name)
             importable_classes = ALL_IMPORTABLE_CLASSES
-            loaded_sub_model = None
 
-            # 6.3 Use passed sub model or load class_name from library_name
+            # Use passed sub model or load class_name from library_name
             if name in passed_class_obj:
                 # if the model is in a pipeline module, then we load it from the pipeline
                 # check that passed_class_obj has correct parent class
@@ -1091,7 +1091,69 @@ class DiffusionPipeline(ConfigMixin):
                     f"Loaded {name} as {class_name} from `{name}` subfolder of {pretrained_model_name_or_path}."
                 )
 
-            init_kwargs[name] = loaded_sub_model  # UNet(...), # DiffusionSchedule(...)
+            return name, loaded_sub_model
+
+
+        # 6. Load each module in the pipeline
+        # for name, (library_name, class_name) in tqdm(init_dict.items(), desc="Loading pipeline components..."):
+            # # 6.1 - now that JAX/Flax is an official framework of the library, we might load from Flax names
+            # if class_name.startswith("Flax"):
+            #     class_name = class_name[4:]
+
+            # # 6.2 Define all importable classes
+            # is_pipeline_module = hasattr(pipelines, library_name)
+            # importable_classes = ALL_IMPORTABLE_CLASSES
+            # loaded_sub_model = None
+
+            # # 6.3 Use passed sub model or load class_name from library_name
+            # if name in passed_class_obj:
+            #     # if the model is in a pipeline module, then we load it from the pipeline
+            #     # check that passed_class_obj has correct parent class
+            #     maybe_raise_or_warn(
+            #         library_name, library, class_name, importable_classes, passed_class_obj, name, is_pipeline_module
+            #     )
+
+            #     loaded_sub_model = passed_class_obj[name]
+            # else:
+            #     # load sub model
+            #     loaded_sub_model = load_sub_model(
+            #         library_name=library_name,
+            #         class_name=class_name,
+            #         importable_classes=importable_classes,
+            #         pipelines=pipelines,
+            #         is_pipeline_module=is_pipeline_module,
+            #         pipeline_class=pipeline_class,
+            #         torch_dtype=torch_dtype,
+            #         provider=provider,
+            #         sess_options=sess_options,
+            #         device_map=device_map,
+            #         max_memory=max_memory,
+            #         offload_folder=offload_folder,
+            #         offload_state_dict=offload_state_dict,
+            #         model_variants=model_variants,
+            #         name=name,
+            #         from_flax=from_flax,
+            #         variant=variant,
+            #         low_cpu_mem_usage=low_cpu_mem_usage,
+            #         cached_folder=cached_folder,
+            #     )
+            #     logger.info(
+            #         f"Loaded {name} as {class_name} from `{name}` subfolder of {pretrained_model_name_or_path}."
+            #     )
+
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=8) as executor:
+            submodules = [
+                executor.submit(load_sub_module, name, library_name, class_name, init_dict, passed_class_obj, 
+                    pipelines, pipeline_class, torch_dtype, provider, sess_options, device_map, 
+                    max_memory, offload_folder, offload_state_dict, model_variants, from_flax, 
+                    variant, low_cpu_mem_usage, cached_folder, pretrained_model_name_or_path) for name, (library_name, class_name) in init_dict.items()
+            ]
+            submodules = [submodule.result() for submodule in submodules]
+        for submodule_name, submodule in submodules:
+            init_kwargs[submodule_name] = submodule
+
+            # init_kwargs[name] = loaded_sub_model  # UNet(...), # DiffusionSchedule(...)
 
         if pipeline_class._load_connected_pipes and os.path.isfile(os.path.join(cached_folder, "README.md")):
             modelcard = ModelCard.load(os.path.join(cached_folder, "README.md"))
