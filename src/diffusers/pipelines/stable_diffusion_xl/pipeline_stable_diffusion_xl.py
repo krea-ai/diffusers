@@ -560,6 +560,7 @@ class StableDiffusionXLPipeline(DiffusionPipeline, FromSingleFileMixin, LoraLoad
         self,
         prompt: Union[str, List[str]] = None,
         prompt_2: Optional[Union[str, List[str]]] = None,
+        end_cfg=0.6,
         height: Optional[int] = None,
         width: Optional[int] = None,
         num_inference_steps: int = 50,
@@ -831,6 +832,14 @@ class StableDiffusionXLPipeline(DiffusionPipeline, FromSingleFileMixin, LoraLoad
 
                 # compute the previous noisy sample x_t -> x_t-1
                 latents = self.scheduler.step(noise_pred, t, latents, **extra_step_kwargs, return_dict=False)[0]
+
+                if end_cfg is not None and i / num_inference_steps > end_cfg and do_classifier_free_guidance:
+                    print("ENDING 2 CFG")
+                    do_classifier_free_guidance = False
+                    prompt_embeds = prompt_embeds[-1:]
+                    add_text_embeds = add_text_embeds[-1:]
+                    add_time_ids = add_time_ids[-1:]
+
 
                 # call the callback, if provided
                 if i == len(timesteps) - 1 or ((i + 1) > num_warmup_steps and (i + 1) % self.scheduler.order == 0):
