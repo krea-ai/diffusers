@@ -770,7 +770,9 @@ class StableDiffusionXLControlNetPipeline(DiffusionPipeline, TextualInversionLoa
         guess_mode: bool = False,
         control_guidance_start: Union[float, List[float]] = 0.0,
         control_guidance_end: Union[float, List[float]] = 1.0,
-        controlnet_strength: float = 1.0,
+        controlnet_end: float = 0.0,
+        controlnet_start: float = 1.,
+        # controlnet_strength: float = None, #for legacy support with old sdxl 
         original_size: Tuple[int, int] = None,
         crops_coords_top_left: Tuple[int, int] = (0, 0),
         target_size: Tuple[int, int] = None,
@@ -896,6 +898,8 @@ class StableDiffusionXLControlNetPipeline(DiffusionPipeline, TextualInversionLoa
             control_guidance_start, control_guidance_end = mult * [control_guidance_start], mult * [
                 control_guidance_end
             ]
+        print(f"controlnet_end = {controlnet_end}")
+        print(f"controlnet_start = {controlnet_start}")
 
         # 1. Check inputs. Raise error if not correct
         self.check_inputs(
@@ -1112,7 +1116,9 @@ class StableDiffusionXLControlNetPipeline(DiffusionPipeline, TextualInversionLoa
 
                 # predict the noise residual
                 
-                if t >= controlnet_strength * 1000:
+                # if t <= controlnet_start * 1000 and t >= controlnet_end * 1000:
+                if i / len(timesteps) >= controlnet_start and i / len(timesteps) <= controlnet_end:
+                    print("using cnet at timetsep" , t)
                     noise_pred = self.unet(
                         latent_model_input,
                         t,
