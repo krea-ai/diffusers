@@ -770,11 +770,12 @@ class StableDiffusionXLControlNetPipeline(DiffusionPipeline, TextualInversionLoa
         guess_mode: bool = False,
         control_guidance_start: Union[float, List[float]] = 0.0,
         control_guidance_end: Union[float, List[float]] = 1.0,
+        controlnet_strength: float = 1.0,
         original_size: Tuple[int, int] = None,
         crops_coords_top_left: Tuple[int, int] = (0, 0),
         target_size: Tuple[int, int] = None,
         img2img_image: Optional[Union[torch.FloatTensor, PIL.Image.Image]] = None,
-        img2img_strength: float = 1.0,
+        img2img_strength: float = 0.0,
         hack=False,
         **kwargs
     ):
@@ -979,14 +980,16 @@ class StableDiffusionXLControlNetPipeline(DiffusionPipeline, TextualInversionLoa
         num_channels_latents = self.unet.config.in_channels
 
 
-        if img2img_strength > 0.0 or hack:
-            print("DFJlkaSDK:J:LKJDFLK:DSJF\n\n\n\n WARNING remove hack")
+
+        if (img2img_strength > 0.0) and latents is None:
             img2img_image = self.image_processor.preprocess(img2img_image)
 
             timesteps, num_inference_steps = self.get_timesteps(
                 num_inference_steps, 1 - img2img_strength, device, denoising_start=None
             )
+            print(f"timesteps = {timesteps}")
             latent_timestep = timesteps[:1].repeat(batch_size * num_images_per_prompt)
+            print(f"latent_timestep = {latent_timestep}")
 
 
             add_noise = True
@@ -1001,6 +1004,14 @@ class StableDiffusionXLControlNetPipeline(DiffusionPipeline, TextualInversionLoa
                 generator,
                 add_noise,
             )
+        elif latents is not None:
+            print("using pased latetns")
+            timesteps, num_inference_steps = self.get_timesteps(
+                num_inference_steps, 1 - img2img_strength, device, denoising_start=None
+            )
+            latent_timestep = timesteps[:1].repeat(batch_size * num_images_per_prompt)
+            print(f"latent_timestep = {latent_timestep}")
+            latents = latents
         else:
             timesteps = self.scheduler.timesteps
 
@@ -1058,6 +1069,7 @@ class StableDiffusionXLControlNetPipeline(DiffusionPipeline, TextualInversionLoa
 
         # 8. Denoising loop
         num_warmup_steps = len(timesteps) - num_inference_steps * self.scheduler.order
+        print("starting denoising loop with time steps: ", timesteps)
         with self.progress_bar(total=num_inference_steps) as progress_bar:
             for i, t in enumerate(timesteps):
                 # expand the latents if we are doing classifier free guidance
@@ -1099,16 +1111,28 @@ class StableDiffusionXLControlNetPipeline(DiffusionPipeline, TextualInversionLoa
                     mid_block_res_sample = torch.cat([torch.zeros_like(mid_block_res_sample), mid_block_res_sample])
 
                 # predict the noise residual
-                noise_pred = self.unet(
-                    latent_model_input,
-                    t,
-                    encoder_hidden_states=prompt_embeds,
-                    cross_attention_kwargs=cross_attention_kwargs,
-                    down_block_additional_residuals=down_block_res_samples,
-                    mid_block_additional_residual=mid_block_res_sample,
-                    added_cond_kwargs=added_cond_kwargs,
-                    return_dict=False,
-                )[0]
+                
+                if t >= controlnet_strength * 1000:
+                    noise_pred = self.unet(
+                        latent_model_input,
+                        t,
+                        encoder_hidden_states=prompt_embeds,
+                        cross_attention_kwargs=cross_attention_kwargs,
+                        down_block_additional_residuals=down_block_res_samples,
+                        mid_block_additional_residual=mid_block_res_sample,
+                        added_cond_kwargs=added_cond_kwargs,
+                        return_dict=False,
+                    )[0]
+                else:
+                    print("DEBUG: not using controlnet at ts", t)
+                    noise_pred = self.unet(
+                        latent_model_input,
+                        t,
+                        encoder_hidden_states=prompt_embeds,
+                        cross_attention_kwargs=cross_attention_kwargs,
+                        added_cond_kwargs=added_cond_kwargs,
+                        return_dict=False,
+                    )[0]
 
                 # perform guidance
                 if do_classifier_free_guidance:

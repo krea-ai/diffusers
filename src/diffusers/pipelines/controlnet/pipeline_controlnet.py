@@ -1082,7 +1082,7 @@ class StableDiffusionControlNetPipeline(DiffusionPipeline, TextualInversionLoade
                     mid_block_res_sample = torch.cat([torch.zeros_like(mid_block_res_sample), mid_block_res_sample])
 
                 # predict the noise residual
-                if t <= controlnet_strength * 1000:
+                if t >= controlnet_strength * 1000:
                     noise_pred = self.unet(
                         latent_model_input,
                         t,
