@@ -9,6 +9,14 @@ __pycache__/
 *.so
 
 # tests and logs
+**.jpg
+**.jpeg
+*.jpeg
+**/*.png
+**.png
+*.png
+**/*.png
+**/*.jpeg
 tests/fixtures/cached_*_text.txt
 logs/
 lightning_logs/

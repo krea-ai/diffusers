@@ -829,8 +829,8 @@ class StableDiffusionControlNetPipeline(DiffusionPipeline, TextualInversionLoade
         guess_mode: bool = False,
         img2img_image: Optional[Union[torch.FloatTensor, PIL.Image.Image]] = None,
         img2img_strength: float = 1.0,
-        controlnet_start: float = 1.0,
-        controlnet_end: float = 0.0,
+        controlnet_start: float = 0.0,
+        controlnet_end: float = 1.0,
     ):
         r"""
         Function invoked when calling the pipeline for generation.
