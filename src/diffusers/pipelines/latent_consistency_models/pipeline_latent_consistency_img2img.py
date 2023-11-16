@@ -15,6 +15,7 @@
 # DISCLAIMER: This code is strongly influenced by https://github.com/pesser/pytorch_diffusion
 # and https://github.com/hojonathanho/diffusion
 
+import copy
 import inspect
 from typing import Any, Callable, Dict, List, Optional, Union
 
@@ -659,7 +660,7 @@ class LatentConsistencyModelImg2ImgPipeline(
             callback_on_step_end_tensor_inputs (`List`, *optional*):
                 The list of tensor inputs for the `callback_on_step_end` function. The tensors specified in the list
                 will be passed as `callback_kwargs` argument. You will only be able to include variables listed in the
-                `._callback_tensor_inputs` attribute of your pipeline class.
+                `._callback_tensor_inputs` attribute of your pipeine class.
 
         Examples:
 
@@ -670,6 +671,7 @@ class LatentConsistencyModelImg2ImgPipeline(
                 second element is a list of `bool`s indicating whether the corresponding generated image contains
                 "not-safe-for-work" (nsfw) content.
         """
+        print("running patched diffuesrs call")
         callback = kwargs.pop("callback", None)
         callback_steps = kwargs.pop("callback_steps", None)
 
@@ -687,7 +689,11 @@ class LatentConsistencyModelImg2ImgPipeline(
             )
 
         # 1. Check inputs. Raise error if not correct
-        self.check_inputs(prompt, strength, callback_steps, prompt_embeds, callback_on_step_end_tensor_inputs)
+        if isinstance(strength, (list, tuple)):
+            self.check_inputs(prompt, strength[0], callback_steps, prompt_embeds, callback_on_step_end_tensor_inputs)
+        else:
+            self.check_inputs(prompt, strength, callback_steps, prompt_embeds, callback_on_step_end_tensor_inputs)
+
         self._guidance_scale = guidance_scale
         self._clip_skip = clip_skip
         self._cross_attention_kwargs = cross_attention_kwargs
@@ -726,41 +732,99 @@ class LatentConsistencyModelImg2ImgPipeline(
         # 4. Encode image
         image = self.image_processor.preprocess(image)
 
-        # 5. Prepare timesteps
-        self.scheduler.set_timesteps(
-            num_inference_steps, device, original_inference_steps=original_inference_steps, strength=strength
-        )
-        timesteps = self.scheduler.timesteps
+        CUSTOM_IMG2IMG = True
+        batch_timesteps = []
+        schedulers = []
+        if CUSTOM_IMG2IMG:
+            orig_scheduler = copy.deepcopy(self.scheduler)
+            orig_generator_state = generator.get_state()
+            # strength = [1, 0.5, 0.1]
+            # strength = [1, 0.5, 0.1][::-1]
+            if isinstance(strength, (list, tuple)):
+                assert len(strength) == batch_size
+            else:
+                strength = [strength] * batch_size
+            print(f"strength = {strength}")
+            print('custom multi denosie strength batch')
+            latents = []
+            for im, strength in zip(image, strength):
+                # 5. Prepare timesteps
+                self.scheduler = copy.deepcopy(orig_scheduler)
+                self.scheduler.set_timesteps(
+                    num_inference_steps, device, original_inference_steps=original_inference_steps, strength=strength
+                )
+                timesteps = self.scheduler.timesteps
+                batch_timesteps.append(timesteps)
 
-        # 6. Prepare latent variables
-        original_inference_steps = (
-            original_inference_steps
-            if original_inference_steps is not None
-            else self.scheduler.config.original_inference_steps
-        )
-        latent_timestep = timesteps[:1]
-        latents = self.prepare_latents(
-            image, latent_timestep, batch_size, num_images_per_prompt, prompt_embeds.dtype, device, generator
-        )
-        bs = batch_size * num_images_per_prompt
+                # 6. Prepare latent variables
+                original_inference_steps = (
+                    original_inference_steps
+                    if original_inference_steps is not None
+                    else self.scheduler.config.original_inference_steps
+                )
+                latent_timestep = timesteps[:1]
+                im = im.unsqueeze(0)
+
+                #overriding batch size to one to prevent prepare_latents from repeating to batch size
+                latents.append(self.prepare_latents(
+                    im, latent_timestep, 1, num_images_per_prompt, prompt_embeds.dtype, device, generator.set_state(orig_generator_state)
+                ))
+                bs = batch_size * num_images_per_prompt
+                schedulers.append(self.scheduler)
+            latents = torch.cat(latents, dim=0)
+            batch_timesteps = [x.detach().cpu().tolist() for x in batch_timesteps]
+        else:
+            # 5. Prepare timesteps
+            self.scheduler.set_timesteps(
+                num_inference_steps, device, original_inference_steps=original_inference_steps, strength=strength
+            )
+            timesteps = self.scheduler.timesteps
+
+            # 6. Prepare latent variables
+            original_inference_steps = (
+                original_inference_steps
+                if original_inference_steps is not None
+                else self.scheduler.config.original_inference_steps
+            )
+            latent_timestep = timesteps[:1]
+            latents = self.prepare_latents(
+                image, latent_timestep, batch_size, num_images_per_prompt, prompt_embeds.dtype, device, generator
+            )
+            bs = batch_size * num_images_per_prompt
 
         # 6. Get Guidance Scale Embedding
         # NOTE: We use the Imagen CFG formulation that StableDiffusionPipeline uses rather than the original LCM paper
         # CFG formulation, so we need to subtract 1 from the input guidance_scale.
         # LCM CFG formulation:  cfg_noise = noise_cond + cfg_scale * (noise_cond - noise_uncond), (cfg_scale > 0.0 using CFG)
-        w = torch.tensor(self.guidance_scale - 1).repeat(bs)
+
+        # print("TESTING CODE")
+        # self._guidance_scale = [1, 8, 20]
+        if isinstance(self.guidance_scale, list):
+            # assert len(self.guidance_scale) == batch_size
+            w = torch.tensor(self.guidance_scale)
+            print(w, w.shape)
+        else:
+            w = torch.tensor(self.guidance_scale - 1).repeat(bs)
+        
+        # w = torch.tensor(self.guidance_scale - 1).repeat(bs)
         w_embedding = self.get_guidance_scale_embedding(w, embedding_dim=self.unet.config.time_cond_proj_dim).to(
             device=device, dtype=latents.dtype
         )
 
         # 7. Prepare extra step kwargs. TODO: Logic should ideally just be moved out of the pipeline
         extra_step_kwargs = self.prepare_extra_step_kwargs(generator, None)
+        print(f"extra_step_kwargs = {extra_step_kwargs}")
 
         # 8. LCM Multistep Sampling Loop
         num_warmup_steps = len(timesteps) - num_inference_steps * self.scheduler.order
         self._num_timesteps = len(timesteps)
         with self.progress_bar(total=num_inference_steps) as progress_bar:
-            for i, t in enumerate(timesteps):
+            timestep_iter = zip(*batch_timesteps) if CUSTOM_IMG2IMG else timesteps
+            for i, t in enumerate(timestep_iter):
+                if isinstance(t, (list, tuple)):
+                    t = torch.tensor(t).to(device=device)
+
+                print("step", i, "t", t)
                 latents = latents.to(prompt_embeds.dtype)
 
                 # model prediction (v-prediction, eps, x)
@@ -774,7 +838,27 @@ class LatentConsistencyModelImg2ImgPipeline(
                 )[0]
 
                 # compute the previous noisy sample x_t -> x_t-1
-                latents, denoised = self.scheduler.step(model_pred, t, latents, **extra_step_kwargs, return_dict=False)
+                if CUSTOM_IMG2IMG:
+                    batch_latents = []
+                    batch_denoised = []
+
+                    if "generator" in extra_step_kwargs:
+                        generator_state = extra_step_kwargs["generator"].get_state()
+                    else:
+                        generator_state = None
+                    for i, pred in enumerate(model_pred):
+                        if "generator" in extra_step_kwargs:
+                            extra_step_kwargs["generator"].set_state(generator_state)  
+                        self.scheduler = schedulers[i]
+                        self.scheduler.timesteps = torch.tensor(batch_timesteps[i])
+                        latent, denoised = self.scheduler.step(pred.unsqueeze(0), t[i].cpu().item(), latents[i].unsqueeze(0), **extra_step_kwargs, return_dict=False)
+                        batch_latents.append(latent)
+                        batch_denoised.append(denoised)
+                    latents = torch.cat(batch_latents)
+                    denoised = torch.cat(batch_denoised)
+                    
+                else:
+                    latents, denoised = self.scheduler.step(model_pred, t, latents, **extra_step_kwargs, return_dict=False)
                 if callback_on_step_end is not None:
                     callback_kwargs = {}
                     for k in callback_on_step_end_tensor_inputs:
