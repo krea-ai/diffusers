@@ -736,10 +736,13 @@ class LatentConsistencyModelImg2ImgPipeline(
         batch_timesteps = []
         schedulers = []
         if CUSTOM_IMG2IMG:
+            if not isinstance(generator, (list, tuple)):
+                generator = [generator] * batch_size
             orig_scheduler = copy.deepcopy(self.scheduler)
-            orig_generator_state = generator.get_state()
+            # orig_generator_state = generator.get_state()
             # strength = [1, 0.5, 0.1]
             # strength = [1, 0.5, 0.1][::-1]
+
             if isinstance(strength, (list, tuple)):
                 assert len(strength) == batch_size
             else:
@@ -747,7 +750,7 @@ class LatentConsistencyModelImg2ImgPipeline(
             print(f"strength = {strength}")
             print('custom multi denosie strength batch')
             latents = []
-            for im, strength in zip(image, strength):
+            for im, strength, gen in zip(image, strength, generator):
                 # 5. Prepare timesteps
                 self.scheduler = copy.deepcopy(orig_scheduler)
                 self.scheduler.set_timesteps(
@@ -765,9 +768,10 @@ class LatentConsistencyModelImg2ImgPipeline(
                 latent_timestep = timesteps[:1]
                 im = im.unsqueeze(0)
 
+
                 #overriding batch size to one to prevent prepare_latents from repeating to batch size
                 latents.append(self.prepare_latents(
-                    im, latent_timestep, 1, num_images_per_prompt, prompt_embeds.dtype, device, generator.set_state(orig_generator_state)
+                    im, latent_timestep, 1, num_images_per_prompt, prompt_embeds.dtype, device, gen
                 ))
                 bs = batch_size * num_images_per_prompt
                 schedulers.append(self.scheduler)
@@ -842,13 +846,11 @@ class LatentConsistencyModelImg2ImgPipeline(
                     batch_latents = []
                     batch_denoised = []
 
-                    if "generator" in extra_step_kwargs:
-                        generator_state = extra_step_kwargs["generator"].get_state()
-                    else:
-                        generator_state = None
+                    if "generator" in extra_step_kwargs and isinstance(extra_step_kwargs["generator"], list):
+                        generators = extra_step_kwargs["generator"]
                     for i, pred in enumerate(model_pred):
                         if "generator" in extra_step_kwargs:
-                            extra_step_kwargs["generator"].set_state(generator_state)  
+                            extra_step_kwargs["generator"] = generators[i]
                         self.scheduler = schedulers[i]
                         self.scheduler.timesteps = torch.tensor(batch_timesteps[i])
                         latent, denoised = self.scheduler.step(pred.unsqueeze(0), t[i].cpu().item(), latents[i].unsqueeze(0), **extra_step_kwargs, return_dict=False)
