@@ -747,8 +747,8 @@ class LatentConsistencyModelImg2ImgPipeline(
                 assert len(strength) == batch_size
             else:
                 strength = [strength] * batch_size
-            print(f"strength = {strength}")
-            print('custom multi denosie strength batch')
+            # print(f"strength = {strength}")
+            # print('custom multi denosie strength batch')
             latents = []
             for im, strength, gen in zip(image, strength, generator):
                 # 5. Prepare timesteps
@@ -828,7 +828,7 @@ class LatentConsistencyModelImg2ImgPipeline(
                 if isinstance(t, (list, tuple)):
                     t = torch.tensor(t).to(device=device)
 
-                print("step", i, "t", t)
+                # print("step", i, "t", t)
                 latents = latents.to(prompt_embeds.dtype)
 
                 # model prediction (v-prediction, eps, x)
