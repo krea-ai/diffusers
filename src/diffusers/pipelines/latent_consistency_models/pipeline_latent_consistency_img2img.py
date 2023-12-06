@@ -829,6 +829,7 @@ class LatentConsistencyModelImg2ImgPipeline(
                     t = torch.tensor(t).to(device=device)
 
                 # print("step", i, "t", t)
+
                 latents = latents.to(prompt_embeds.dtype)
 
                 # model prediction (v-prediction, eps, x)
