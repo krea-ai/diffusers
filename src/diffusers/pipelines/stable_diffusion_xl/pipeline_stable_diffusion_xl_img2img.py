@@ -158,9 +158,28 @@ def retrieve_timesteps(
         timesteps = scheduler.timesteps
         num_inference_steps = len(timesteps)
     else:
-        scheduler.set_timesteps(num_inference_steps, device=device, **kwargs)
-        timesteps = scheduler.timesteps
-    return timesteps, num_inference_steps
+
+        new_steps = num_inference_steps
+        strength = kwargs.get("strength", None)
+        accepts_strength = "strength" in set(inspect.signature(scheduler.set_timesteps).parameters.keys())
+        print(f"accepts_strength = {accepts_strength}")
+        if scheduler.config.timestep_spacing == "sgm":
+            if strength < 0.99:
+                new_steps = int(num_inference_steps / strength)
+
+        if accepts_strength:
+            scheduler.set_timesteps(new_steps, device=device, strength=strength)
+        else:
+            scheduler.set_timesteps(new_steps, device=device,)
+
+        if scheduler.config.timestep_spacing == "sgm" and strength < 0.99:
+            scheduler.sigmas = scheduler.sigmas[-(num_inference_steps+1):] # +1 for the 0 sigma appended
+            scheduler.timesteps = scheduler.timesteps[-(num_inference_steps):]
+            print(f"SGM ADjusted Sigmas: {scheduler.sigmas}")
+            print(f"SGM ADjusted timesteps: {scheduler.timesteps}")
+        scheduler.num_inference_steps = num_inference_steps
+
+    return scheduler.timesteps, num_inference_steps
 
 
 class StableDiffusionXLImg2ImgPipeline(
@@ -623,7 +642,10 @@ class StableDiffusionXLImg2ImgPipeline(
 
     def get_timesteps(self, num_inference_steps, strength, device, denoising_start=None):
         # get the original timestep using init_timestep
-        if denoising_start is None:
+        if self.scheduler.config.timestep_spacing == "sgm" or self.scheduler.config.timestep_spacing == "sgm_custom": 
+            print("Usign all timesteps")
+            t_start = 0
+        elif denoising_start is None:
             init_timestep = min(int(num_inference_steps * strength), num_inference_steps)
             t_start = max(num_inference_steps - init_timestep, 0)
         else:
@@ -1226,7 +1248,7 @@ class StableDiffusionXLImg2ImgPipeline(
         def denoising_value_valid(dnv):
             return isinstance(dnv, float) and 0 < dnv < 1
 
-        timesteps, num_inference_steps = retrieve_timesteps(self.scheduler, num_inference_steps, device, timesteps)
+        timesteps, num_inference_steps = retrieve_timesteps(self.scheduler, num_inference_steps, device, timesteps, strength=strength)
         timesteps, num_inference_steps = self.get_timesteps(
             num_inference_steps,
             strength,

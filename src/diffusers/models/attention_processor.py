@@ -2144,6 +2144,7 @@ class IPAdapterAttnProcessor(nn.Module):
         scale: float = 1.0,
         ip_adapter_masks: Optional[torch.FloatTensor] = None,
     ):
+        print("in IPAdapterAttnProcessor")
         residual = hidden_states
 
         # separate ip_hidden_states from encoder_hidden_states
@@ -2250,6 +2251,13 @@ class IPAdapterAttnProcessor(nn.Module):
 
         return hidden_states
 
+class ScaleModule(nn.Module):
+    def __init__(self,):
+        super(ScaleModule, self).__init__()
+        self.scale = nn.Parameter(torch.tensor(1., dtype=torch.float32),)
+
+    def forward(self, x):
+        return self.scale * x
 
 class IPAdapterAttnProcessor2_0(torch.nn.Module):
     r"""
@@ -2287,6 +2295,8 @@ class IPAdapterAttnProcessor2_0(torch.nn.Module):
             raise ValueError("`scale` should be a list of integers with the same length as `num_tokens`.")
         self.scale = scale
 
+        self.scale_module = ScaleModule()
+
         self.to_k_ip = nn.ModuleList(
             [nn.Linear(cross_attention_dim, hidden_size, bias=False) for _ in range(len(num_tokens))]
         )
@@ -2305,6 +2315,7 @@ class IPAdapterAttnProcessor2_0(torch.nn.Module):
         ip_adapter_masks: Optional[torch.FloatTensor] = None,
     ):
         residual = hidden_states
+        # print("in IPAdapterAttnProcessor2_0")
 
         # separate ip_hidden_states from encoder_hidden_states
         if encoder_hidden_states is not None:
@@ -2414,7 +2425,10 @@ class IPAdapterAttnProcessor2_0(torch.nn.Module):
 
                 current_ip_hidden_states = current_ip_hidden_states * mask_downsample
 
-            hidden_states = hidden_states + scale * current_ip_hidden_states
+            scaled_ip_hidden_states = self.scale_module(current_ip_hidden_states)
+            hidden_states = hidden_states + scaled_ip_hidden_states
+
+            # hidden_states = hidden_states + scale * current_ip_hidden_states
 
         # linear proj
         hidden_states = attn.to_out[0](hidden_states)

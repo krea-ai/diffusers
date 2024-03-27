@@ -296,7 +296,7 @@ class EulerDiscreteScheduler(SchedulerMixin, ConfigMixin):
         self.is_scale_input_called = True
         return sample
 
-    def set_timesteps(self, num_inference_steps: int, device: Union[str, torch.device] = None):
+    def set_timesteps(self, num_inference_steps: int, device: Union[str, torch.device] = None, strength=None):
         """
         Sets the discrete timesteps used for the diffusion chain (to be run before inference).
 
@@ -325,6 +325,14 @@ class EulerDiscreteScheduler(SchedulerMixin, ConfigMixin):
             # casting to int to avoid issues when num_inference_step is power of 3
             timesteps = (np.arange(self.config.num_train_timesteps, 0, -step_ratio)).round().copy().astype(np.float32)
             timesteps -= 1
+        elif self.config.timestep_spacing == "sgm":
+            timesteps = torch.linspace(999, 0, num_inference_steps + 1)[:-1]
+            timesteps = timesteps.numpy().astype(np.float32)
+            print(timesteps)
+        elif self.config.timestep_spacing == "sgm_custom":
+            timesteps = torch.linspace(999 * strength, 0, num_inference_steps + 1)[:-1]
+            timesteps = timesteps.numpy().astype(np.float32)
+            print(timesteps)
         else:
             raise ValueError(
                 f"{self.config.timestep_spacing} is not supported. Please make sure to choose one of 'linspace', 'leading' or 'trailing'."
@@ -359,12 +367,15 @@ class EulerDiscreteScheduler(SchedulerMixin, ConfigMixin):
         self._step_index = None
         self._begin_index = None
         self.sigmas = self.sigmas.to("cpu")  # to avoid too much CPU/GPU communication
+        print("FINAL in set_timesteps")
+        print(f"sigmas: {self.sigmas}")
+        print(f"timesteps: {self.timesteps}")
 
     def _sigma_to_t(self, sigma, log_sigmas):
         # get log sigma
         log_sigma = np.log(np.maximum(sigma, 1e-10))
 
-        # get distribution
+      # get distribution
         dists = log_sigma - log_sigmas[:, np.newaxis]
 
         # get sigmas range

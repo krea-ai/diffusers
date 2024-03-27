@@ -869,6 +869,8 @@ class UNet2DConditionLoadersMixin:
                     value_dict.update({f"to_v_ip.{i}.weight": state_dict["ip_adapter"][f"{key_id}.to_v_ip.weight"]})
 
                 if not low_cpu_mem_usage:
+                    if hasattr(attn_procs[name], "scale_module"):
+                        value_dict["scale_module.scale"] = torch.tensor([1.0])
                     attn_procs[name].load_state_dict(value_dict)
                 else:
                     device = next(iter(value_dict.values())).device
