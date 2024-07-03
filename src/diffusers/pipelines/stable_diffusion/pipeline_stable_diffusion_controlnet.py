@@ -22,15 +22,14 @@ import torch
 from torch import nn
 
 import PIL.Image
-from diffusers.pipelines.stable_diffusion.safety_checker import StableDiffusionSafetyChecker
+
+# from diffusers.pipelines.stable_diffusion.safety_checker import StableDiffusionSafetyChecker
 from transformers import CLIPImageProcessor, CLIPTextModel, CLIPTokenizer
 
 from ...loaders import TextualInversionLoaderMixin
 from ...models import AutoencoderKL, ControlNetModel, UNet2DConditionModel
 from ...models.controlnet import ControlNetOutput
 from ...models.modeling_utils import ModelMixin
-from ...pipelines.stable_diffusion import StableDiffusionPipelineOutput
-from ...pipelines.stable_diffusion.safety_checker import StableDiffusionSafetyChecker
 from ...schedulers import KarrasDiffusionSchedulers
 from ...utils import (
     PIL_INTERPOLATION,
@@ -41,6 +40,8 @@ from ...utils import (
 )
 from ...utils.torch_utils import randn_tensor
 from ..pipeline_utils import DiffusionPipeline
+from . import StableDiffusionPipelineOutput
+from .safety_checker import StableDiffusionSafetyChecker
 
 
 logger = logging.get_logger(__name__)  # pylint: disable=invalid-name
@@ -829,8 +830,7 @@ class StableDiffusionControlNetPipeline(DiffusionPipeline, TextualInversionLoade
         guess_mode: bool = False,
         img2img_image: Optional[Union[torch.FloatTensor, PIL.Image.Image]] = None,
         img2img_strength: float = 1.0,
-        controlnet_start: float = 0.0,
-        controlnet_end: float = 1.0,
+        controlnet_strength: float = 1.0,
     ):
         r"""
         Function invoked when calling the pipeline for generation.
@@ -1083,9 +1083,7 @@ class StableDiffusionControlNetPipeline(DiffusionPipeline, TextualInversionLoade
                     mid_block_res_sample = torch.cat([torch.zeros_like(mid_block_res_sample), mid_block_res_sample])
 
                 # predict the noise residual
-                # if t <= controlnet_start * 1000:
-                if i / len(timesteps) >= controlnet_start and i / len(timesteps) <= controlnet_end:
-                    print("using controlnet", t)
+                if t <= controlnet_strength * 1000:
                     noise_pred = self.unet(
                         latent_model_input,
                         t,
@@ -1095,7 +1093,6 @@ class StableDiffusionControlNetPipeline(DiffusionPipeline, TextualInversionLoade
                         mid_block_additional_residual=mid_block_res_sample,
                     ).sample
                 else:
-                    print("not using controlnet", t)
                     noise_pred = self.unet(
                         latent_model_input,
                         t,
