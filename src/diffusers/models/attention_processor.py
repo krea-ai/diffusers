@@ -2399,6 +2399,9 @@ class IPAdapterAttnProcessor2_0(torch.nn.Module):
         for current_ip_hidden_states, scale, to_k_ip, to_v_ip, mask in zip(
             ip_hidden_states, self.scale, self.to_k_ip, self.to_v_ip, ip_adapter_masks
         ):
+            if hasattr(self, "zero_ip_cond") and self.zero_ip_cond is True:
+                print("zeroing IP adapter cond for style transfer")
+                current_ip_hidden_states = current_ip_hidden_states.clone() * 0
             ip_key = to_k_ip(current_ip_hidden_states)
             ip_value = to_v_ip(current_ip_hidden_states)
 
