@@ -855,12 +855,14 @@ class UNet2DConditionLoadersMixin:
                         # IP-Adapter Plus
                         num_image_text_embeds += [state_dict["image_proj"]["latents"].shape[1]]
 
+
                 with init_context():
                     attn_procs[name] = attn_processor_class(
                         hidden_size=hidden_size,
                         cross_attention_dim=cross_attention_dim,
                         scale=1.0,
                         num_tokens=num_image_text_embeds,
+                        block_transformer_name=name,
                     )
 
                 value_dict = {}

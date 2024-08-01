@@ -1005,6 +1005,7 @@ class StableDiffusionXLImg2ImgPipeline(
         clip_skip: Optional[int] = None,
         callback_on_step_end: Optional[Callable[[int, int, Dict], None]] = None,
         callback_on_step_end_tensor_inputs: List[str] = ["latents"],
+        preprocessed_ip_embeds=None,
         **kwargs,
     ):
         r"""
@@ -1370,8 +1371,15 @@ class StableDiffusionXLImg2ImgPipeline(
 
                 # predict the noise residual
                 added_cond_kwargs = {"text_embeds": add_text_embeds, "time_ids": add_time_ids}
-                if ip_adapter_image is not None or ip_adapter_image_embeds is not None:
-                    added_cond_kwargs["image_embeds"] = image_embeds
+                # if ip_adapter_image is not None or ip_adapter_image_embeds is not None:
+                ip_data = kwargs.get("ip_data", None)
+                if ip_data is not None:
+                    if ip_data["scales"] is not None:
+                        if isinstance(ip_data["scales"], (float, int)):
+                            from collections import defaultdict
+                            ip_data["scales"] = defaultdict(lambda: ip_data["scales"])
+                    added_cond_kwargs["ip_data"] = ip_data
+                
                 noise_pred = self.unet(
                     latent_model_input,
                     t,

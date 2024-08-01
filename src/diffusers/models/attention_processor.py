@@ -2251,6 +2251,15 @@ class IPAdapterAttnProcessor(nn.Module):
 
         return hidden_states
 
+class EmbModule(nn.Module):
+    def __init__(self,):
+        super(ScaleModule, self).__init__()
+        self.scale = nn.Parameter(torch.tensor(1., dtype=torch.float32),)
+
+    def forward(self, x):
+        return self.scale * x
+
+
 class ScaleModule(nn.Module):
     def __init__(self,):
         super(ScaleModule, self).__init__()
@@ -2274,7 +2283,7 @@ class IPAdapterAttnProcessor2_0(torch.nn.Module):
             the weight scale of image prompt.
     """
 
-    def __init__(self, hidden_size, cross_attention_dim=None, num_tokens=(4,), scale=1.0):
+    def __init__(self, hidden_size, cross_attention_dim=None, num_tokens=(4,), scale=1.0, block_transformer_name=None):
         super().__init__()
 
         if not hasattr(F, "scaled_dot_product_attention"):
@@ -2285,9 +2294,12 @@ class IPAdapterAttnProcessor2_0(torch.nn.Module):
         self.hidden_size = hidden_size
         self.cross_attention_dim = cross_attention_dim
 
+        # self.ip_hidden_states = nn.Parameter(torch.ones((1, 1, 16, 1280), dtype=torch.float16),)
+
         if not isinstance(num_tokens, (tuple, list)):
             num_tokens = [num_tokens]
         self.num_tokens = num_tokens
+        self.block_transformer_name = block_transformer_name
 
         if not isinstance(scale, list):
             scale = [scale] * len(num_tokens)
@@ -2321,6 +2333,14 @@ class IPAdapterAttnProcessor2_0(torch.nn.Module):
         if encoder_hidden_states is not None:
             if isinstance(encoder_hidden_states, tuple):
                 encoder_hidden_states, ip_hidden_states = encoder_hidden_states
+                if isinstance(ip_hidden_states, dict):
+                    scale = global_scale = ip_hidden_states["scales"][self.block_transformer_name]
+                    ip_hidden_states = ip_hidden_states["ip_hidden_states"][self.block_transformer_name]
+                    # print(f"using layerwise scale {scale} in {self.block_transformer_name}")
+
+                # if hasattr(self, "ip_hidden_states"):
+                #     print("overriding ip_hidden_states with self")
+                #     ip_hidden_states = self.ip_hidden_states
             else:
                 deprecation_message = (
                     "You have passed a tensor as `encoder_hidden_states`. This is deprecated and will be removed in a future release."
@@ -2401,7 +2421,7 @@ class IPAdapterAttnProcessor2_0(torch.nn.Module):
         ):
             if hasattr(self, "zero_ip_cond") and self.zero_ip_cond is True:
                 print("zeroing IP adapter cond for style transfer")
-                current_ip_hidden_states = current_ip_hidden_states.clone() * 0
+                current_ip_hidden_states = current_ip_hidden_states * 0
             ip_key = to_k_ip(current_ip_hidden_states)
             ip_value = to_v_ip(current_ip_hidden_states)
 
@@ -2428,10 +2448,11 @@ class IPAdapterAttnProcessor2_0(torch.nn.Module):
 
                 current_ip_hidden_states = current_ip_hidden_states * mask_downsample
 
-            scaled_ip_hidden_states = self.scale_module(current_ip_hidden_states)
-            hidden_states = hidden_states + scaled_ip_hidden_states
+            # scaled_ip_hidden_states = self.scale_module(current_ip_hidden_states)
+            # hidden_states = hidden_states + scaled_ip_hidden_states
 
-            # hidden_states = hidden_states + scale * current_ip_hidden_states
+            scale = global_scale
+            hidden_states = hidden_states + scale * current_ip_hidden_states
 
         # linear proj
         hidden_states = attn.to_out[0](hidden_states)

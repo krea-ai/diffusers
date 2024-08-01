@@ -1161,9 +1161,11 @@ class UNet2DConditionModel(ModelMixin, ConfigMixin, UNet2DConditionLoadersMixin,
         if self.time_embed_act is not None:
             emb = self.time_embed_act(emb)
 
-        encoder_hidden_states = self.process_encoder_hidden_states(
-            encoder_hidden_states=encoder_hidden_states, added_cond_kwargs=added_cond_kwargs
-        )
+        # encoder_hidden_states = self.process_encoder_hidden_states(
+        #     encoder_hidden_states=encoder_hidden_states, added_cond_kwargs=added_cond_kwargs
+        # )
+        if added_cond_kwargs is not None and "ip_data" in added_cond_kwargs:
+            encoder_hidden_states = (encoder_hidden_states, added_cond_kwargs["ip_data"])
 
         # 2. pre-process
         sample = self.conv_in(sample)
