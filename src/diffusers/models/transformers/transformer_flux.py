@@ -469,6 +469,7 @@ class FluxTransformer2DModel(ModelMixin, ConfigMixin, PeftAdapterMixin, FromOrig
         image_rotary_emb = self.pos_embed(ids)
 
         global_gradient_checkpointing = self.gradient_checkpointing
+        print("Using patched gradient checkpointing in flux forward pass")
         for index_block, block in enumerate(self.transformer_blocks):
             if global_gradient_checkpointing:
                 if index_block % 3 == 0:
