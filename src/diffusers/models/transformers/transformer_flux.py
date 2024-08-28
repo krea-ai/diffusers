@@ -382,15 +382,7 @@ class FluxTransformer2DModel(ModelMixin, ConfigMixin, PeftAdapterMixin, FromOrig
             self.set_attn_processor(self.original_attn_processors)
 
     def _set_gradient_checkpointing(self, module, value=False):
-        import random
         if hasattr(module, "gradient_checkpointing"):
-            print("hacky shit")
-            if random.random() < 0.5:
-                print(f"setting gradient checkpointing to {value} for {module}")
-                module.gradient_checkpointing = value
-            else:
-                print(f"setting gradient checkpointing to {not value} for {module}")
-                module.gradient_checkpointing = not value
             module.gradient_checkpointing = value
 
     def forward(
