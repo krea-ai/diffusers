@@ -515,7 +515,7 @@ class FluxTransformer2DModel(ModelMixin, ConfigMixin, PeftAdapterMixin, FromOrig
 
         for index_block, block in enumerate(self.single_transformer_blocks):
             if global_gradient_checkpointing:
-                if index_block % 2 == 0 or index_block > len(self.single_transformer_blocks) - 2:
+                if index_block % 4 == 0 or index_block > len(self.single_transformer_blocks) - 2:
                     self.gradient_checkpointing = True
                 else:
                     # print("Force disabling grad checkpointing singlestream")
