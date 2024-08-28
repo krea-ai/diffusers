@@ -382,7 +382,15 @@ class FluxTransformer2DModel(ModelMixin, ConfigMixin, PeftAdapterMixin, FromOrig
             self.set_attn_processor(self.original_attn_processors)
 
     def _set_gradient_checkpointing(self, module, value=False):
+        import random
         if hasattr(module, "gradient_checkpointing"):
+            print("hacky shit")
+            if random.random() < 0.5:
+                print(f"setting gradient checkpointing to {value} for {module}")
+                module.gradient_checkpointing = value
+            else:
+                print(f"setting gradient checkpointing to {not value} for {module}")
+                module.gradient_checkpointing = not value
             module.gradient_checkpointing = value
 
     def forward(
@@ -468,7 +476,14 @@ class FluxTransformer2DModel(ModelMixin, ConfigMixin, PeftAdapterMixin, FromOrig
         ids = torch.cat((txt_ids, img_ids), dim=0)
         image_rotary_emb = self.pos_embed(ids)
 
+        global_gradient_checkpointing = self.gradient_checkpointing
         for index_block, block in enumerate(self.transformer_blocks):
+            if global_gradient_checkpointing:
+                if index_block % 3 == 0:
+                    self.gradient_checkpointing = True
+                else:
+                    print("Force disabling grad checkpointing mmdit")
+                    self.gradient_checkpointing = False
             if self.training and self.gradient_checkpointing:
 
                 def create_custom_forward(module, return_dict=None):
@@ -507,8 +522,13 @@ class FluxTransformer2DModel(ModelMixin, ConfigMixin, PeftAdapterMixin, FromOrig
         hidden_states = torch.cat([encoder_hidden_states, hidden_states], dim=1)
 
         for index_block, block in enumerate(self.single_transformer_blocks):
+            if global_gradient_checkpointing:
+                if index_block % 2 == 0 or index_block > len(self.single_transformer_blocks) - 2:
+                    self.gradient_checkpointing = True
+                else:
+                    print("Force disabling grad checkpointing singlestream")
+                    self.gradient_checkpointing = False
             if self.training and self.gradient_checkpointing:
-
                 def create_custom_forward(module, return_dict=None):
                     def custom_forward(*inputs):
                         if return_dict is not None:
@@ -526,7 +546,6 @@ class FluxTransformer2DModel(ModelMixin, ConfigMixin, PeftAdapterMixin, FromOrig
                     image_rotary_emb,
                     **ckpt_kwargs,
                 )
-
             else:
                 hidden_states = block(
                     hidden_states=hidden_states,
