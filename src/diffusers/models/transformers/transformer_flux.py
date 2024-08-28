@@ -474,7 +474,7 @@ class FluxTransformer2DModel(ModelMixin, ConfigMixin, PeftAdapterMixin, FromOrig
                 if index_block % 3 == 0:
                     self.gradient_checkpointing = True
                 else:
-                    print("Force disabling grad checkpointing mmdit")
+                    # print("Force disabling grad checkpointing mmdit")
                     self.gradient_checkpointing = False
             if self.training and self.gradient_checkpointing:
 
@@ -518,7 +518,7 @@ class FluxTransformer2DModel(ModelMixin, ConfigMixin, PeftAdapterMixin, FromOrig
                 if index_block % 2 == 0 or index_block > len(self.single_transformer_blocks) - 2:
                     self.gradient_checkpointing = True
                 else:
-                    print("Force disabling grad checkpointing singlestream")
+                    # print("Force disabling grad checkpointing singlestream")
                     self.gradient_checkpointing = False
             if self.training and self.gradient_checkpointing:
                 def create_custom_forward(module, return_dict=None):
