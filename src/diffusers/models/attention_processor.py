@@ -1,4 +1,5 @@
 # Copyright 2024 The HuggingFace Team. All rights reserved.
+import os
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -35,6 +36,25 @@ if is_xformers_available():
     import xformers.ops
 else:
     xformers = None
+
+sdpa = F.scaled_dot_product_attention
+    
+
+def fa3_sdpa(q, k, v, *args, **kwargs):
+    # print("Using FlashAttention3")
+    q, k, v = [x.permute (0, 2, 1, 3) for x in [q, k, v]]
+    out = flash_attn_func(q, k, v,)[0]
+    return out.permute(0, 2, 1, 3)
+
+if os.getenv("USE_FLASH_ATTN", False):
+    print("trying to import flash attention")
+    try:
+        from flash_attn_interface import flash_attn_func
+        sdpa = fa3_sdpa
+    except Exception as e:
+        print("!"*80)
+        print(f"Could not import flash_attn: {e}, falling back to normal attention")
+    
 
 
 @maybe_allow_in_graph
@@ -1762,7 +1782,9 @@ class FluxAttnProcessor2_0:
             query = apply_rotary_emb(query, image_rotary_emb)
             key = apply_rotary_emb(key, image_rotary_emb)
 
-        hidden_states = F.scaled_dot_product_attention(query, key, value, dropout_p=0.0, is_causal=False)
+
+
+        hidden_states = sdpa(query, key, value, dropout_p=0.0, is_causal=False)
         hidden_states = hidden_states.transpose(1, 2).reshape(batch_size, -1, attn.heads * head_dim)
         hidden_states = hidden_states.to(query.dtype)
 
@@ -1856,7 +1878,7 @@ class FusedFluxAttnProcessor2_0:
             query = apply_rotary_emb(query, image_rotary_emb)
             key = apply_rotary_emb(key, image_rotary_emb)
 
-        hidden_states = F.scaled_dot_product_attention(query, key, value, dropout_p=0.0, is_causal=False)
+        hidden_states = sdpa(query, key, value, dropout_p=0.0, is_causal=False)
         hidden_states = hidden_states.transpose(1, 2).reshape(batch_size, -1, attn.heads * head_dim)
         hidden_states = hidden_states.to(query.dtype)
 

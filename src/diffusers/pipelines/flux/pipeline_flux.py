@@ -708,6 +708,8 @@ class FluxPipeline(DiffusionPipeline, FluxLoraLoaderMixin, FromSingleFileMixin):
             guidance = None
 
         # 6. Denoising loop
+        import time
+        t_start = time.time()
         with self.progress_bar(total=num_inference_steps) as progress_bar:
             for i, t in enumerate(timesteps):
                 if self.interrupt:
@@ -753,6 +755,8 @@ class FluxPipeline(DiffusionPipeline, FluxLoraLoaderMixin, FromSingleFileMixin):
                 if XLA_AVAILABLE:
                     xm.mark_step()
 
+        t_sample = time.time() - t_start
+        print("Time taken for inference: ", t_sample)
         if output_type == "latent":
             image = latents
 
