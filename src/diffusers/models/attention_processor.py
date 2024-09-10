@@ -39,19 +39,12 @@ else:
 
 sdpa = F.scaled_dot_product_attention
     
-# @torch.compiler.allow_in_graph
 
-@torch.library.custom_op("krea::fa3", mutates_args=())
-def fa3_sdpa(q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, ) -> torch.Tensor:
+def fa3_sdpa(q, k, v, *args, **kwargs):
     # print("Using FlashAttention3")
     q, k, v = [x.permute (0, 2, 1, 3) for x in [q, k, v]]
     out = flash_attn_func(q, k, v,)[0]
     return out.permute(0, 2, 1, 3)
-
-@torch.library.register_fake("krea::fa3")
-def fake_fa3_sdpa(q, k, v,):
-    q, k, v = [x.permute (0, 2, 1, 3) for x in [q, k, v]]
-    return v
 
 if os.getenv("USE_FLASH_ATTN", False):
     print("trying to import flash attention")
@@ -1791,7 +1784,7 @@ class FluxAttnProcessor2_0:
 
 
 
-        hidden_states = sdpa(query, key, value,)
+        hidden_states = sdpa(query, key, value, dropout_p=0.0, is_causal=False)
         hidden_states = hidden_states.transpose(1, 2).reshape(batch_size, -1, attn.heads * head_dim)
         hidden_states = hidden_states.to(query.dtype)
 
@@ -1885,7 +1878,7 @@ class FusedFluxAttnProcessor2_0:
             query = apply_rotary_emb(query, image_rotary_emb)
             key = apply_rotary_emb(key, image_rotary_emb)
 
-        hidden_states = sdpa(query, key, value,)
+        hidden_states = sdpa(query, key, value, dropout_p=0.0, is_causal=False)
         hidden_states = hidden_states.transpose(1, 2).reshape(batch_size, -1, attn.heads * head_dim)
         hidden_states = hidden_states.to(query.dtype)
 
